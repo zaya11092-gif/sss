@@ -1,0 +1,85 @@
+name: Build IntelXeDriver Kext
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode.app
+    
+    - name: List repository structure
+      run: |
+        ls -la
+        ls -la IntelXeDriver.kext/
+    
+    - name: Create build directory
+      run: mkdir -p build
+    
+    - name: Compile IntelXeDriver.cpp
+      run: |
+        clang++ \
+          -arch x86_64 \
+          -mmacosx-version-min=10.15 \
+          -fno-common \
+          -fno-exceptions \
+          -fno-rtti \
+          -fno-stack-protector \
+          -fvisibility=hidden \
+          -Wall \
+          -Werror \
+          -DKERNEL \
+          -DKERNEL_PRIVATE \
+          -DAPPLE \
+          -DNeXT \
+          -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Kernel.framework/Headers \
+          -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/IOKit.framework/Headers \
+          -c ./IntelXeDriver.kext/IntelXeDriver.cpp \
+          -o build/IntelXeDriver.o
+    
+    - name: Link kernel extension
+      run: |
+        ld \
+          -arch x86_64 \
+          -mmacosx-version-min=10.15 \
+          -static \
+          -nostdlib \
+          -r \
+          -o build/IntelXeDriver \
+          build/IntelXeDriver.o \
+          -lcc_kext \
+          -lkmod \
+          -lklibc \
+          -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+    
+    - name: Strip debug symbols
+      run: strip -S build/IntelXeDriver
+    
+    - name: Copy binary to kext bundle
+      run: |
+        cp build/IntelXeDriver IntelXeDriver.kext/Contents/MacOS/IntelXeDriver
+        chmod +x IntelXeDriver.kext/Contents/MacOS/IntelXeDriver
+    
+    - name: Set kext permissions
+      run: |
+        chmod -R 755 IntelXeDriver.kext
+        chown -R root:wheel IntelXeDriver.kext
+    
+    - name: Validate Info.plist
+      run: /usr/libexec/PlistBuddy -c Print IntelXeDriver.kext/Contents/Info.plist
+    
+    - name: Upload kext artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: IntelXeDriver-kext
+        path: IntelXeDriver.kext
